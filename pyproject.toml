@@ -1,0 +1,24 @@
+[project]
+name = "eccv2022-rife"
+version = "0.1.0"
+description = "Real-Time Intermediate Flow Estimation for Video Frame Interpolation."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Megvii Research" }]
+dependencies = [
+    "numpy",
+    "tqdm",
+    "sk-video",
+    "torch",
+    "torchvision",
+    "opencv-python",
+    "moviepy",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = []
