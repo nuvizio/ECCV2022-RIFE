@@ -85,32 +85,46 @@ if torch.cuda.is_available():
     if(args.fp16):
         torch.set_default_tensor_type(torch.cuda.HalfTensor)
 
+print("=" * 60)
+print("Starting RIFE Video Interpolation")
+print("=" * 60)
+print(f"Device: {device}")
+print(f"FP16 mode: {args.fp16}")
+print(f"Scale: {args.scale}")
+print(f"Loading model from: {args.modelDir}")
+
 try:
     try:
         try:
             from model.RIFE_HDv2 import Model
             model = Model()
             model.load_model(args.modelDir, -1)
-            print("Loaded v2.x HD model.")
+            print("✓ Loaded v2.x HD model.")
         except:
             from train_log.RIFE_HDv3 import Model
             model = Model()
             model.load_model(args.modelDir, -1)
-            print("Loaded v3.x HD model.")
+            print("✓ Loaded v3.x HD model.")
     except:
         from model.RIFE_HD import Model
         model = Model()
         model.load_model(args.modelDir, -1)
-        print("Loaded v1.x HD model")
+        print("✓ Loaded v1.x HD model")
 except:
     from model.RIFE import Model
     model = Model()
     model.load_model(args.modelDir, -1)
-    print("Loaded ArXiv-RIFE model")
+    print("✓ Loaded ArXiv-RIFE model")
+    
 model.eval()
 model.device()
 
+print("\n" + "=" * 60)
+print("Loading Input")
+print("=" * 60)
+
 if not args.video is None:
+    print(f"Video file: {args.video}")
     videoCapture = cv2.VideoCapture(args.video)
     fps = videoCapture.get(cv2.CAP_PROP_FPS)
     tot_frame = videoCapture.get(cv2.CAP_PROP_FRAME_COUNT)
@@ -124,12 +138,17 @@ if not args.video is None:
     lastframe = next(videogen)
     fourcc = cv2.VideoWriter_fourcc('m', 'p', '4', 'v')
     video_path_wo_ext, ext = os.path.splitext(args.video)
-    print('{}.{}, {} frames in total, {}FPS to {}FPS'.format(video_path_wo_ext, args.ext, tot_frame, fps, args.fps))
+    print(f'✓ Input: {video_path_wo_ext}.{args.ext}')
+    print(f'  Total frames: {int(tot_frame)}')
+    print(f'  Input FPS: {fps:.2f}')
+    print(f'  Output FPS: {args.fps:.2f}')
+    print(f'  Interpolation multiplier: {2 ** args.exp}x')
     if args.png == False and fpsNotAssigned == True:
-        print("The audio will be merged after interpolation process")
+        print("  Audio: Will be merged after interpolation")
     else:
-        print("Will not merge audio because using png or fps flag!")
+        print("  Audio: Will NOT be merged (using png or custom fps)")
 else:
+    print(f"Image directory: {args.img}")
     videogen = []
     for f in os.listdir(args.img):
         if 'png' in f:
@@ -138,18 +157,23 @@ else:
     videogen.sort(key= lambda x:int(x[:-4]))
     lastframe = cv2.imread(os.path.join(args.img, videogen[0]), cv2.IMREAD_UNCHANGED)[:, :, ::-1].copy()
     videogen = videogen[1:]
+    print(f'✓ Total images: {tot_frame}')
 h, w, _ = lastframe.shape
+print(f'  Resolution: {w}x{h}')
+
 vid_out_name = None
 vid_out = None
 if args.png:
     if not os.path.exists('vid_out'):
         os.mkdir('vid_out')
+    print(f'  Output: PNG sequence in vid_out/ directory')
 else:
     if args.output is not None:
         vid_out_name = args.output
     else:
         vid_out_name = '{}_{}X_{}fps.{}'.format(video_path_wo_ext, (2 ** args.exp), int(np.round(args.fps)), args.ext)
     vid_out = cv2.VideoWriter(vid_out_name, fourcc, args.fps, (w, h))
+    print(f'  Output: {vid_out_name}')
 
 def clear_write_buffer(user_args, write_buffer):
     cnt = 0
@@ -200,7 +224,12 @@ tmp = max(32, int(32 / args.scale))
 ph = ((h - 1) // tmp + 1) * tmp
 pw = ((w - 1) // tmp + 1) * tmp
 padding = (0, pw - w, 0, ph - h)
-pbar = tqdm(total=tot_frame)
+
+print("\n" + "=" * 60)
+print("Starting Interpolation")
+print("=" * 60)
+pbar = tqdm(total=tot_frame, desc="Processing frames", unit="frame",
+            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]')
 if args.montage:
     lastframe = lastframe[:, left: left + w]
 write_buffer = Queue(maxsize=500)
@@ -281,17 +310,32 @@ else:
 write_buffer.put(None)
 
 import time
+print("\nFlushing write buffer...")
 while(not write_buffer.empty()):
     time.sleep(0.1)
 pbar.close()
 if not vid_out is None:
     vid_out.release()
 
+print("\n" + "=" * 60)
+print("Finalizing Output")
+print("=" * 60)
+
 # move audio to new video file if appropriate
 if args.png == False and fpsNotAssigned == True and not args.video is None:
+    print("Transferring audio from original video...")
     try:
         transferAudio(args.video, vid_out_name)
+        print("✓ Audio transfer completed successfully")
     except:
-        print("Audio transfer failed. Interpolated video will have no audio")
+        print("✗ Audio transfer failed. Interpolated video will have no audio")
         targetNoAudio = os.path.splitext(vid_out_name)[0] + "_noaudio" + os.path.splitext(vid_out_name)[1]
         os.rename(targetNoAudio, vid_out_name)
+
+print("\n" + "=" * 60)
+print("✓ Processing Complete!")
+print("=" * 60)
+if vid_out_name:
+    print(f"Output saved to: {vid_out_name}")
+else:
+    print(f"Output saved to: vid_out/ directory")

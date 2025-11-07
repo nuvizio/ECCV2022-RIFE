@@ -7,11 +7,11 @@ requires-python = ">=3.10"
 license = "MIT"
 authors = [{ name = "Megvii Research" }]
 dependencies = [
-    "numpy",
+    "numpy<1.24",
     "tqdm",
     "sk-video",
-    "torch",
-    "torchvision",
+    "torch>=2.0.0,<2.5.0",
+    "torchvision>=0.15.0,<0.20.0",
     "opencv-python",
     "moviepy",
 ]
