@@ -13,9 +13,11 @@ from model.pytorch_msssim import ssim_matlab
 
 warnings.filterwarnings("ignore")
 
-def transferAudio(sourceVideo, targetVideo):
+def transferAudio(sourceVideo, targetVideo, repeat_audio=False):
     import shutil
     import moviepy.editor
+    import subprocess
+
     tempAudioFileName = "./temp/audio.mkv"
 
     # split audio from original video file and store in "temp" directory
@@ -32,13 +34,33 @@ def transferAudio(sourceVideo, targetVideo):
 
     targetNoAudio = os.path.splitext(targetVideo)[0] + "_noaudio" + os.path.splitext(targetVideo)[1]
     os.rename(targetVideo, targetNoAudio)
-    # combine audio file and new video file
-    os.system('ffmpeg -y -i "{}" -i {} -c copy "{}"'.format(targetNoAudio, tempAudioFileName, targetVideo))
+
+    # Get video duration to match audio if repeating
+    if repeat_audio:
+        # Get video duration
+        result = subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+                               '-of', 'default=noprint_wrappers=1:nokey=1', targetNoAudio],
+                              capture_output=True, text=True)
+        video_duration = float(result.stdout.strip())
+
+        print(f"  Looping audio to match video duration ({video_duration:.2f}s)...")
+        # Use aloop filter to repeat audio to match video duration
+        os.system('ffmpeg -y -i "{}" -i {} -c:v copy -filter:a "aloop=loop=-1:size=2e+09" -shortest "{}"'.format(
+            targetNoAudio, tempAudioFileName, targetVideo))
+    else:
+        # combine audio file and new video file - audio is copied as-is, no speed change
+        os.system('ffmpeg -y -i "{}" -i {} -c:v copy -c:a copy "{}"'.format(targetNoAudio, tempAudioFileName, targetVideo))
 
     if os.path.getsize(targetVideo) == 0: # if ffmpeg failed to merge the video and audio together try converting the audio to aac
         tempAudioFileName = "./temp/audio.m4a"
         os.system('ffmpeg -y -i "{}" -c:a aac -b:a 160k -vn {}'.format(sourceVideo, tempAudioFileName))
-        os.system('ffmpeg -y -i "{}" -i {} -c copy "{}"'.format(targetNoAudio, tempAudioFileName, targetVideo))
+
+        if repeat_audio:
+            os.system('ffmpeg -y -i "{}" -i {} -c:v copy -filter:a "aloop=loop=-1:size=2e+09" -shortest "{}"'.format(
+                targetNoAudio, tempAudioFileName, targetVideo))
+        else:
+            os.system('ffmpeg -y -i "{}" -i {} -c:v copy -c:a copy "{}"'.format(targetNoAudio, tempAudioFileName, targetVideo))
+
         if (os.path.getsize(targetVideo) == 0): # if aac is not supported by selected format
             os.rename(targetNoAudio, targetVideo)
             print("Audio transfer failed. Interpolated video will have no audio")
@@ -131,7 +153,7 @@ if not args.video is None:
     videoCapture.release()
     if args.fps is None:
         fpsNotAssigned = True
-        args.fps = fps * (2 ** args.exp)
+        args.fps = fps  # Keep original FPS, don't multiply
     else:
         fpsNotAssigned = False
     videogen = skvideo.io.vreader(args.video)
@@ -141,10 +163,10 @@ if not args.video is None:
     print(f'✓ Input: {video_path_wo_ext}.{args.ext}')
     print(f'  Total frames: {int(tot_frame)}')
     print(f'  Input FPS: {fps:.2f}')
-    print(f'  Output FPS: {args.fps:.2f}')
-    print(f'  Interpolation multiplier: {2 ** args.exp}x')
+    print(f'  Output FPS: {args.fps:.2f} (same as input)')
+    print(f'  Frame interpolation: {2 ** args.exp}x (generates {int(tot_frame * (2 ** args.exp))} frames)')
     if args.png == False and fpsNotAssigned == True:
-        print("  Audio: Will be merged after interpolation")
+        print("  Audio: Will be looped to match video duration")
     else:
         print("  Audio: Will NOT be merged (using png or custom fps)")
 else:
@@ -325,7 +347,8 @@ print("=" * 60)
 if args.png == False and fpsNotAssigned == True and not args.video is None:
     print("Transferring audio from original video...")
     try:
-        transferAudio(args.video, vid_out_name)
+        # Repeat audio when keeping original FPS (generates more frames = longer video)
+        transferAudio(args.video, vid_out_name, repeat_audio=True)
         print("✓ Audio transfer completed successfully")
     except:
         print("✗ Audio transfer failed. Interpolated video will have no audio")
